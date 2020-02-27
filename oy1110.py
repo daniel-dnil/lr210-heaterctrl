@@ -4,8 +4,11 @@ Created on Feb 23, 2020
 @author: daniel
 '''
 
-import sys
 from datetime import datetime, timedelta
+import logging
+
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 class RHTSensor(object):
     '''
@@ -38,26 +41,28 @@ class RHTSensor(object):
                 self._humi = int(data_arr[1]) << 4 | (int(data_arr[2]) & 0xF)
                 self._humi = (self._humi - 250) / 10.0
                 self._temp_humi_ts = datetime.now()
-                print("Temp: " + str(self._temp) + " Humi: " + str(self._humi))
+                LOGGER.info("Temperature: %f Humidity: %f", self._temp, self._humi)
             else:
-                sys.stderr.write("Only ungrouped data of length 3 supported\n")
+                LOGGER.error("Only ungrouped data of length 3 supported")
         elif port == 1:
             # Protocol data deconding not implemented yet
             pass
         else:
-            sys.stderr.write("Unknown port in UL data: " + str(port) + "\n")
+            LOGGER.error("Unknown port in UL data: %d", port)
 
     def _check_max_data_age(self):
         time_now = datetime.now()
         if self._temp_humi_ts and (self._temp_humi_ts + self._temp_humi_max_age) < time_now:
             self._temp = None
             self._humi = None
-            sys.stderr.write("Invalidating temp/humi data due to age\n")
+            LOGGER.warning("Invalidating temp/humi data due to age")
 
     def temperature(self):
+        ''' Return current temperature (if known) else None '''
         self._check_max_data_age()
         return self._temp
 
     def humidity(self):
+        ''' Return current humidity (if known) else None '''
         self._check_max_data_age()
         return self._humi

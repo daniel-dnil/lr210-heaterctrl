@@ -5,9 +5,12 @@ Created on Feb 22, 2020
 '''
 import ssl
 import json
-import sys
 import base64
+import logging
 import paho.mqtt.client as mqtt
+
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 def data_port_from_payload(payload):
     ''' Extract payload data as bytearray and port from payload '''
@@ -18,14 +21,14 @@ def data_port_from_payload(payload):
         data_arr = bytearray(base64.b64decode(payload_obj["data"]))
         port = payload_obj["fPort"]
     except TypeError as exception:
-        sys.stderr.write("Failed to extract payload! " + repr(exception) + "\n")
+        LOGGER.error("Failed to extract payload! " + repr(exception))
         return (data_arr, port)
     ret_val = (data_arr, port)
     return ret_val
 
 class LoraServerHandler(mqtt.Client):
     '''
-    classdocs
+    Handle interface via MQTT towards LoRa Server (now ChirpStack)
     '''
 
     def __init__(self, mqtt_host, mqtt_port, mqtt_tls_mode,
@@ -48,9 +51,11 @@ class LoraServerHandler(mqtt.Client):
         self._mqtt_connected = False
         self._rht_uplink_handler = None
         self._lr210_uplink_handler = None
+        self._connect_handler = None
 
-    def on_log(self, _client, _userdata, _level, buf):
-        print("log: ", buf)
+    def set_connect_handler(self, callback):
+        ''' Set callback used when we have connected to MQTT broker OK '''
+        self._connect_handler = callback
 
     def set_rht_sensor_ul_cb(self, callback):
         ''' Set callback to handle RHT sensor UL data '''
@@ -65,7 +70,7 @@ class LoraServerHandler(mqtt.Client):
             tx_object = {"confirmed": True, "fPort": data[1], "data":b64_str}
             self.publish(lr210pub, json.dumps(tx_object))
         else:
-            sys.stderr.write("Not connected! Omitting send\n")
+            LOGGER.error("Not connected! Omitting send!")
 
     def set_lr210_ul_cb(self, callback):
         ''' Set callback to handle RL210 UL data '''
@@ -75,32 +80,45 @@ class LoraServerHandler(mqtt.Client):
         ''' Act on MQTT data matching LR210 RX topic '''
 
         # This callback will only be called for LR210 RX data
-        print("LR210: " + msg.topic + " " + str(msg.qos) + " " + str(msg.payload))
+        LOGGER.info("LR210 uplink data: " + msg.topic + " " + str(msg.qos) + " " + str(msg.payload))
         ul_data = data_port_from_payload(msg.payload)
         if self._lr210_uplink_handler:
             self._lr210_uplink_handler(ul_data)
         else:
-            sys.stderr.write("No UL data handler for LR210 data?\n")
+            LOGGER.error("No UL data handler for LR210 data?")
 
     def on_rht_sensor_data(self, _mosq, _obj, msg):
         ''' Act on MQTT data matching RHT RX topic '''
 
         # This callback will only be called for RHT sensor data
-        print("RHT: " + msg.topic + " " + str(msg.qos) + " " + str(msg.payload))
+        LOGGER.info("RHT uplink data: " + msg.topic + " " + str(msg.qos) + " " + str(msg.payload))
         ul_data = data_port_from_payload(msg.payload)
         if self._rht_uplink_handler:
             self._rht_uplink_handler(ul_data)
         else:
-            sys.stderr.write("No UL data handler for RHT data?\n")
+            LOGGER.error("No UL data handler for RHT data?")
 
     def on_message(self, _mosq, _obj, msg):
-        # This callback will be called for messages that we receive that do not
-        # match any patterns defined in topic specific callbacks
-        print(msg.topic + " " + str(msg.qos) + " " + str(msg.payload))
+        ''' This callback will be called for messages that we receive that do not
+            match any patterns defined in topic specific callbacks '''
+        LOGGER.warning("Unexpected message received ?" +
+                     msg.topic + " " + str(msg.qos) + " " + str(msg.payload))
+
+    def on_connect(self, _mosq, _obj, _flags, rc):
+        ''' Alert application that we are connected to LoRa Server '''
+        if rc == 0:
+            LOGGER.info("Connected!")
+            # Alert application we are connected
+            if self._connect_handler:
+                self._connect_handler()
+        else:
+            raise RuntimeError("MQTT connection failed!")
 
     def connect_subscribe(self):
         ''' Perform the connect and subscribe procedure towards the broker '''
         if not self._mqtt_connected:
+            self.enable_logger(LOGGER)
+
             if any([self._user, self._pass]):
                 self.username_pw_set(self._user, self._pass)
 
@@ -113,10 +131,12 @@ class LoraServerHandler(mqtt.Client):
             self.message_callback_add(lr210sub, self.on_lr210_data)
             self.message_callback_add(rhtsub, self.on_rht_sensor_data)
 
+            LOGGER.info("Connecting to %s:%d", self._host, self._port)
             self.connect(self._host, self._port, 60)
             self.subscribe([(lr210sub, 2), (rhtsub, 2)], 0)
             self._mqtt_connected = True
 
     def run_loop(self):
+        ''' Run the main connection loop '''
         self.connect_subscribe()
         return mqtt.MQTT_ERR_SUCCESS == self.loop()

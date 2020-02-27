@@ -4,8 +4,11 @@ Created on Feb 23, 2020
 @author: daniel
 '''
 
-import sys
 from datetime import datetime, timedelta
+import logging
+
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 class DownlinkSetCommand(object):
     ''' Object representing a LoRa Downlink Relay Set Command '''
@@ -28,7 +31,7 @@ class DownlinkSetCommand(object):
         '''
         self._retry_count += 1
         self._last_send_timestamp = datetime.now()
-        print("DL relay set command retry count: " + str(self._retry_count))
+        LOGGER.info("DL relay set command retry count: %d", self._retry_count)
 
     def retry_ok(self):
         '''
@@ -36,7 +39,7 @@ class DownlinkSetCommand(object):
         '''
         can_retry = self._retry_max > self._retry_count
         if not can_retry:
-            sys.stderr.write("LR210 out of retries on set command!\n")
+            LOGGER.warning("LR210 out of retries on set command!\n")
         return can_retry
 
     def cmd(self):
@@ -100,6 +103,7 @@ class RelayChannel(object):
             self._act_state = self._act
         else:
             self._act_state = self._deact
+        LOGGER.info(self._ch_str + " actual state updated to " + str(actual))
 
     def set_requested(self, requested):
         '''
@@ -109,6 +113,7 @@ class RelayChannel(object):
             self._req_state = self._act
         else:
             self._req_state = self._deact
+        LOGGER.info(self._ch_str + " requested state updated to " + str(requested))
 
     def dl_command(self):
         '''
@@ -180,7 +185,7 @@ class LR210(object):
                 # Clear any pending commands
                 self._dl_pend_cmd = None
             else:
-                sys.stderr.write("Unexpected data length!\n")
+                LOGGER.error("Unexpected data length!")
         elif port == 1:
             # Protocol data deconding not fully implemented
             if len(data_arr) >= 2:
@@ -192,12 +197,12 @@ class LR210(object):
                         for ch_index, channel in self._channels.items():
                             channel.set_actual((relay_data & (1 << (ch_index-1))) != 0)
         else:
-            sys.stderr.write("Unknown port in UL data: " + str(port) + "\n")
+            LOGGER.error("Unknown port in UL data: %s", str(port))
 
     def _check_max_data_age(self):
         if self._temp_state_ts and \
         (self._temp_state_ts + self._temp_state_max_age) < datetime.now():
-            sys.stderr.write("Invalidating temp and ch state due to age\n")
+            LOGGER.warning("Invalidating temp and ch state due to age")
             self._temp = None
             for channel in self._channels.values():
                 channel.reset_state()
@@ -212,7 +217,8 @@ class LR210(object):
         dl_command[4] = (cmd_data >> 8) & 0xFF
         dl_command[5] = (cmd_data >> 0) & 0xFF
 
-        port = 1 # All DL command on port 1
+        # All DL command on dl_port 1
+        dl_port = 1
         if self._downlink_handler:
             # If this is the first time we send the command, create an object
             # representing the command
@@ -220,9 +226,9 @@ class LR210(object):
                 self._dl_pend_cmd = DownlinkSetCommand(cmd_data)
 
             # Send it over LoRa
-            self._downlink_handler((dl_command, port))
+            self._downlink_handler((dl_command, dl_port))
         else:
-            sys.stderr.write("No DL handler registered!\n")
+            LOGGER.error("No DL handler registered!")
 
     def _send_dl_channel_set_command(self):
         # Iterate over all channels and create the new channel set command
@@ -277,7 +283,7 @@ class LR210(object):
             # Send it over LoRa
             self._downlink_handler((dl_command, port))
         else:
-            sys.stderr.write("No DL handler registered!\n")
+            LOGGER.error("No DL handler registered!")
 
     def set_channel_state(self, new_channel_states):
         '''

@@ -21,7 +21,7 @@ import traceback
 import controller
 
 def main():
-    '''Command line options.'''
+    '''Main controller application'''
 
     program_name = os.path.basename(sys.argv[0])
     try:

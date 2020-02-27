@@ -4,10 +4,13 @@ Created on Feb 21, 2020
 @author: daniel
 '''
 
-import sys
+import logging
 import loraserver
 import oy1110
 import lr210
+
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 class RHTThermostat(object):
     '''
@@ -95,6 +98,7 @@ class ClimateController(object):
         self._lr210_app_app_loc = None
         self._lr210_relay_ch = None
         self._mqtt_tls = False
+        self._lr210_ctrl = None
 
     def mqtt_server_params(self, mqtt_host="", mqtt_port=None,
                            mqtt_username="", mqtt_password="",
@@ -126,6 +130,14 @@ class ClimateController(object):
         self._lr210_app_app_loc = (application, dev_eui)
         self._lr210_relay_ch = relay_channel
 
+    def mqtt_connect_handler(self):
+        '''
+        Installed as callback when we have connected to LoRa Server MQTT OK
+        '''
+        # Perform a one-time query of the current relay states
+        if self._lr210_ctrl:
+            self._lr210_ctrl.request_relay_states()
+
     def run(self):
         '''
         Run the main controller, will not return until severe errors occurs
@@ -141,23 +153,25 @@ class ClimateController(object):
                                                self._rht_lora_app_loc,
                                                self._lr210_app_app_loc)
 
+        # Set our connect handler
+        lora_if.set_connect_handler(self.mqtt_connect_handler)
+
         # Create our RH and tempsensor object
         rht_sensor = oy1110.RHTSensor()
         # Connect the UL data handler (DL to OY1110 not used)
         lora_if.set_rht_sensor_ul_cb(rht_sensor.uplink_data_handler)
 
         # Create the LR210 relay controller object
-        lr210_ctrl = lr210.LR210()
+        self._lr210_ctrl = lr210.LR210()
 
         # Connect the UL and DL data handlers
-        lora_if.set_lr210_ul_cb(lr210_ctrl.uplink_data_handler)
-        lr210_ctrl.set_dl_handler(lora_if.lr210_dl_handler)
+        lora_if.set_lr210_ul_cb(self._lr210_ctrl.uplink_data_handler)
+        self._lr210_ctrl.set_dl_handler(lora_if.lr210_dl_handler)
 
         # Create out thermostat
         thermo = RHTThermostat(-15.0, 75.0)
 
         lora_if_result = True
-        refresh_timeout = 0
         while lora_if_result:
             lora_if_result = lora_if.run_loop()
 
@@ -167,19 +181,12 @@ class ClimateController(object):
 
             # Send the termostat output to the relay controller
             if thermo.output_active():
-                lr210_ctrl.set_channel_state([(self._lr210_relay_ch,
-                                               thermo.output())])
+                self._lr210_ctrl.set_channel_state([(self._lr210_relay_ch,
+                                                     thermo.output())])
 
             # Poll the relay controller if retries are needed
-            lr210_ctrl.periodic_poll()
-
-            # Perform a onetime relay refresh ~10 seconds after startup
-            if refresh_timeout != 11:
-                refresh_timeout += 1
-                if refresh_timeout == 10:
-                    # Perform a one-time query of the current relay states
-                    lr210_ctrl.request_relay_states()
+            self._lr210_ctrl.periodic_poll()
 
             # Check LR210 internal temperature
-            if lr210_ctrl.temperature() and lr210_ctrl.temperature() > 55.0:
-                sys.stderr.write("LR210 internal temp high!\n")
+            if self._lr210_ctrl.temperature() and self._lr210_ctrl.temperature() > 55.0:
+                LOGGER.warning("LR210 internal temp high!")
