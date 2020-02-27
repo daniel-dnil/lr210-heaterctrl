@@ -1,0 +1,23 @@
+# systemd unit file for the LR210 LoRaWAN heater controller
+
+[Unit]
+Description=LR210 heaterctrl
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/daniel/repos/lr210-heaterctrl/heaterctrl.py
+Environment=PYTHONUNBUFFERED=1
+
+# Automatically restart the service if it crashes
+Restart=on-failure
+
+# Use a dedicated user to run our service
+User=daniel
+
+[Install]
+
+# Tell systemd to automatically start this service when the system boots
+# (assuming the service is enabled)
+WantedBy=default.target
+
