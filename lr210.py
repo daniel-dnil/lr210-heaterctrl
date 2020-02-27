@@ -100,22 +100,30 @@ class RelayChannel(object):
         Set the actual relay state to either True (active) or False (deactive)
         '''
         if actual:
-            self._act_state = self._act
+            act_state = self._act
         else:
-            self._act_state = self._deact
-        LOGGER.info(self._ch_str + " actual state updated to " + str(actual))
+            act_state = self._deact
+
+        if act_state != self._act_state:
+            LOGGER.info(self._ch_str + " actual state updated to " + act_state)
+
+        self._act_state = act_state
 
     def set_requested(self, requested):
         '''
         Set the requested relay state to either True (active) or False (deactive)
         '''
         if requested:
-            self._req_state = self._act
+            req_state = self._act
         else:
-            self._req_state = self._deact
-        LOGGER.info(self._ch_str + " requested state updated to " + str(requested))
+            req_state = self._deact
 
-    def dl_command(self):
+        if req_state != self._req_state:
+            LOGGER.info(self._ch_str + " requested state updated to " + str(requested))
+
+        self._req_state = req_state
+
+    def ch_change_required(self):
         '''
         Returns a tuple containing True/False if change is needed followed
         by 0 or 1 for the new channel state. Used to create the DL set command
@@ -230,12 +238,12 @@ class LR210(object):
         else:
             LOGGER.error("No DL handler registered!")
 
-    def _send_dl_channel_set_command(self):
-        # Iterate over all channels and create the new channel set command
+    def _channel_relay_set_data(self):
+        ''' Iterate over all channels and create the new channel set command '''
         cmd_data = 0
         update_needed = False
         for ch_index, channel in self._channels.items():
-            change = channel.dl_command()
+            change = channel.ch_change_required()
             if change[0]:
                 update_needed = True
                 # Set the mask from bit 16 and up
@@ -305,7 +313,7 @@ class LR210(object):
 
         # We always call the send command
         # in case no update is needed nothing is sent
-        self._send_dl_channel_set_command()
+        self._channel_relay_set_data()
 
     def periodic_poll(self):
         ''' Call this periodically to check retry commands '''
