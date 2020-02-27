@@ -281,12 +281,12 @@ class LR210(object):
 
     def request_relay_states(self):
         ''' Send a query over LoRa to read current relay states '''
-                # We should send our command, 6 bytes needed
+        # 2 bytes needed for a query command
         dl_command = bytearray(2)
         dl_command[0] = 0x02 # query command
         dl_command[1] = 0x22 # relay state index
 
-        port = 1 # All DL command on port 1
+        port = 1 # All DL commands on port 1
         if self._downlink_handler:
             # Send it over LoRa
             self._downlink_handler((dl_command, port))
