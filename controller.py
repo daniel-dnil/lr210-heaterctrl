@@ -169,7 +169,7 @@ class ClimateController(object):
         self._lr210_ctrl.set_dl_handler(lora_if.lr210_dl_handler)
 
         # Create out thermostat
-        thermo = RHTThermostat(-15.0, 75.0)
+        thermo = RHTThermostat(-15.0, 80.0)
 
         lora_if_result = True
         while lora_if_result:
