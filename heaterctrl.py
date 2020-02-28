@@ -18,12 +18,25 @@ heaterCtrl is a a control application using LoRaWAN LR210 controller and OY110 R
 import sys
 import os
 import traceback
+import subprocess
 import controller
+
+def get_git_revision_hash():
+    ''' get full git revision as bytes '''
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+
+def get_git_revision_short_hash():
+    ''' get short git revision as bytes '''
+    return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'])
 
 def main():
     '''Main controller application'''
 
     program_name = os.path.basename(sys.argv[0])
+    sys.stdout.write(program_name + " rev: " +
+                     get_git_revision_short_hash().decode('ascii').strip() +
+                     " starting\n")
+
     try:
         # Setup the main controller class
         climate_ctrl = controller.ClimateController()
